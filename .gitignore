@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+
+# Trained model artifacts (large binaries — regenerate with train_models.py)
+backend/models/*.pkl
+
+# Training data (large — regenerate with data_generation/generate_data.py)
+backend/data/training_data.csv
+
+# OS
+.DS_Store
+Thumbs.db
