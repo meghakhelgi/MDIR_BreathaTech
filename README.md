@@ -30,7 +30,7 @@ The API must be started from inside the `backend/` directory because `api.py` im
 
 ```bash
 cd backend
-uvicorn api:app --reload --port 8000
+ python -m uvicorn api:app --reload --port 8000   
 ```
 
 ### 3. Start the frontend

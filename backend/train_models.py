@@ -1,12 +1,7 @@
 """
-BreathaTech Model Trainer v5
-=============================
 Reads breathatech_training_data.csv, engineers features identical to those
 listed in breathatech_model_metadata.json, trains XGBoost classifiers for
-agent and severity, saves to model_v5/.
-
-Run:
-    python train_models.py
+agent and severity, saves to models/.
 """
 
 import os
