@@ -6,8 +6,8 @@
     "OP",
     "PHOSGENE"
   ],
-  "agent_macro_auc": 1.0,
-  "severity_macro_auc": 0.999,
+  "agent_macro_auc": 0.9819,
+  "severity_macro_auc": 0.9764,
   "validation_macro_auc": 0.9998,
   "n_train": 1920,
   "n_test": 480,
@@ -62,5 +62,6 @@
     "eco2_pct_z",
     "op_score_z"
   ],
-  "note": "CO, OP, PHOSGENE, NONE. Monte Carlo simulation with symptom synonym pools. Sources: POP scale, Hampson 2000, Sciuto 2016."
+  "note": "CO, OP, PHOSGENE, NONE. Monte Carlo simulation with symptom synonym pools. Sources: POP scale, Hampson 2000, Sciuto 2016.",
+  "sensor_only_auc": 0.877
 }

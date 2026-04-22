@@ -40,6 +40,7 @@
         <button class="demo-btn op-btn"  data-demo="op_severe">Nerve Agent</button>
         <button class="demo-btn"         data-demo="phosgene_mild">Phosgene Occult</button>
         <button class="demo-btn"         data-demo="none">Baseline</button>
+        <button class="demo-btn manual-btn" id="manual-btn" onclick="App.toggleManualMode()">Manual input</button>
       </div>
 
       <!-- device header -->
@@ -52,6 +53,9 @@
       <div class="sec-hd">Breath &amp; OP sensors</div>
       <div class="sensor-grid" id="sensor-grid">
         <!-- populated by sensors.js -->
+      </div>
+      <div class="manual-grid" id="manual-grid" style="display:none">
+        <!-- populated by app.js in manual mode -->
       </div>
 
       <!-- ML output -->

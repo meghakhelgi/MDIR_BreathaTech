@@ -9,6 +9,7 @@ const App = (() => {
   let _sensors     = {};        // current sensor values (from demo or live device)
   let _sessionLog  = [];        // history strip entries
   let _apiOnline   = false;
+  let _manualMode  = false;
 
   // ── init ────────────────────────────────────────────────────────────────
   async function init() {
@@ -80,10 +81,74 @@ const App = (() => {
     });
   }
 
+  // ── manual sensor input mode ────────────────────────────────────────────
+  function toggleManualMode() {
+    _manualMode = !_manualMode;
+    const btn       = document.getElementById('manual-btn');
+    const sensorGrid = document.getElementById('sensor-grid');
+    const manualGrid = document.getElementById('manual-grid');
+    if (!btn || !sensorGrid || !manualGrid) return;
+
+    if (_manualMode) {
+      // deselect demo buttons
+      document.querySelectorAll('.demo-btn[data-demo]').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      sensorGrid.style.display = 'none';
+      manualGrid.style.display = 'grid';
+      _renderManualGrid();
+    } else {
+      btn.classList.remove('active');
+      sensorGrid.style.display = 'grid';
+      manualGrid.style.display = 'none';
+    }
+  }
+
+  function _renderManualGrid() {
+    const grid = document.getElementById('manual-grid');
+    if (!grid) return;
+
+    grid.innerHTML = Config.SENSORS.map(s => {
+      const cur = _sensors?.[s.key] ?? 0;
+      return `<div class="manual-input-card">
+        <span class="sensor-tag ${s.tagClass}">${s.tag}</span>
+        <div class="sensor-label">${s.label}</div>
+        <div class="manual-input-row">
+          <input
+            type="number" step="0.1" min="0"
+            class="manual-val-input"
+            data-key="${s.key}"
+            value="${Number(cur).toFixed(s.key === 'eco2_pct' ? 2 : 1)}"
+          >
+          <span class="manual-unit">${s.unit}</span>
+        </div>
+        <div class="sensor-ref">${s.ref} &nbsp;·&nbsp; range 0–${s.max} ${s.unit}</div>
+      </div>`;
+    }).join('');
+
+    grid.querySelectorAll('.manual-val-input').forEach(input => {
+      input.addEventListener('input', () => {
+        _sensors[input.dataset.key] = parseFloat(input.value) || 0;
+        Sensors.render(_sensors);
+        _predictSensorsOnly();
+      });
+    });
+  }
+
   // Load a demo case — sensors only; form and ML output are not pre-filled
   function loadDemo(key) {
     const demo = _demoCases[key];
     if (!demo) return;
+
+    // exit manual mode if active
+    if (_manualMode) {
+      _manualMode = false;
+      const sensorGrid = document.getElementById('sensor-grid');
+      const manualGrid = document.getElementById('manual-grid');
+      const manualBtn  = document.getElementById('manual-btn');
+      if (sensorGrid) sensorGrid.style.display = 'grid';
+      if (manualGrid) manualGrid.style.display = 'none';
+      if (manualBtn)  manualBtn.classList.remove('active');
+    }
 
     _currentDemo = key;
     _sensors = { ...demo.sensors };
@@ -250,7 +315,7 @@ const App = (() => {
     };
   }
 
-  return { init, loadDemo, submit, clearForm };
+  return { init, loadDemo, submit, clearForm, toggleManualMode };
 })();
 
 // boot on DOM ready

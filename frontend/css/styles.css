@@ -196,6 +196,43 @@ body {
 .sensor-bar { height: 3px; border-radius: 2px; background: var(--bg4); margin-top: 6px; overflow: hidden; }
 .sensor-bar-fill { height: 100%; border-radius: 2px; transition: width .5s ease; }
 
+/* ── manual input mode ────────────────────────────────────────────────── */
+.demo-btn.manual-btn { border-style: dashed; }
+.demo-btn.manual-btn.active {
+  border-color: var(--purple); color: var(--purple);
+  background: var(--purple-bg); border-style: solid;
+}
+
+.manual-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-bottom: 14px;
+}
+
+.manual-input-card {
+  border-radius: var(--radius); padding: 10px 11px;
+  border: 1px dashed var(--purple-bd); background: var(--purple-bg);
+  position: relative;
+}
+
+.manual-input-row {
+  display: flex; align-items: center; gap: 5px; margin: 4px 0;
+}
+
+.manual-input-row input[type=number] {
+  font-family: var(--mono); font-size: 19px; font-weight: 600;
+  color: var(--purple); background: transparent;
+  border: none; border-bottom: 2px solid var(--purple-bd);
+  border-radius: 0; padding: 0; width: 100%;
+  outline: none;
+}
+.manual-input-row input[type=number]:focus {
+  border-bottom-color: var(--purple);
+  box-shadow: none;
+}
+
+.manual-unit {
+  font-size: 9px; color: var(--text3); font-family: var(--mono); flex-shrink: 0;
+}
+
 /* ── banners ──────────────────────────────────────────────────────────── */
 .banner {
   border-radius: var(--radius-sm); padding: 8px 11px;

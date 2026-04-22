@@ -44,12 +44,12 @@ python3 -m http.server 3000
 
 Then open `http://localhost:3000` in a browser.
 
-### 4. Make a prediction manually (curl example)
+### 4. Make a prediction
 
-1. click a sensor sample input - CO, organophosphate, phosgenes, none
-2. adjust patient vitals, select signs and symptoms, and write in manual inputs as desired
-3. select "run ML"
-4. review updated recommendation
+1. Click a preset in **Device transmission** (CO / Moderate, Nerve Agent, Phosgene Occult, Baseline) to load a real training-data row into the sensor cards — or click **Manual input** to type your own sensor values directly into the sensor panel.
+2. Adjust patient vitals, select signs and symptoms, and add clinical notes as desired.
+3. Click **Submit to ML model**.
+4. Review the triage recommendation, agent probabilities, and treatment guidance.
 
 ### API endpoints
 
@@ -65,19 +65,19 @@ Then open `http://localhost:3000` in a browser.
 
 ### Data pipeline
 
-1. **Frontend input** ([frontend/](frontend/)) — JavaScript UI mocks sensor readings (eCO, eNO, eCO₂, OP score) and clinician-entered data (vitals, symptoms, demographics, `time_since_exposure_min`). 
-    These are assembled into a single `reading` object and POSTed to the backend.
+1. **Frontend input** ([frontend/](frontend/)) — JavaScript UI provides sensor readings (eCO, eNO, eCO₂, OP score) two ways: via preset demo cases loaded from `data/demo_cases.json` (real rows from training data), or via **Manual input** mode, which swaps the sensor cards for editable number fields. Each field shows its normal reference range and valid entry range (0–max). Values update the ML probability bars live. Sensor data is combined with clinician-entered data (vitals, symptoms, demographics, `time_since_exposure_min`) into a single `reading` object and POSTed to the backend.
 2. **API** ([backend/api.py](backend/api.py)) — FastAPI receives the `PredictRequest`, validates it against the `SensorReading` schema, and calls inference.
 3. **Inference** ([backend/inference.py](backend/inference.py)) — `BreathaTechInference` loads the trained models and runs `predict()`. Returns agent class, severity class, and clinical alert flags.
 4. **Frontend output** — the JavaScript results panel renders the ML output, treatment hint, and any critical alerts (`nerve_alert`, `phosgene_occult`).
 
 ### Sensors and why each biomarker is detectable in breath
 
-| Agent | Sensor | Clinical rationale |
-|-------|--------|--------------------|
-| CO | Direct electrochemical oxidation, Pt electrode | Exhaled CO (eCO) tracks carboxyhemoglobin (HbCO) in real time; corrects the SpO₂ paradox — pulse oximetry reads falsely normal in CO poisoning |
-| Nerve agents (OP class) | E-AB aptamer on Au electrode, methylene blue reporter | Detectable in seconds; critical because the pralidoxime reactivation window closes fast — ~2 min for soman, ~5h for sarin, ~40h for VX |
-| Phosgene | eNO via direct oxidation, Pt/Nafion electrode | Exhaled NO rises 30–60 min into the silent latent phase before fatal pulmonary edema develops — the only window to intervene |
+| Sensor | Label | Normal ref | Entry range | Clinical rationale |
+|--------|-------|-----------|-------------|-------------------|
+| eCO | Exhaled CO | < 6 ppm | 0–80 ppm | Tracks carboxyhemoglobin (HbCO) in real time; corrects the SpO₂ paradox — pulse oximetry reads falsely normal in CO poisoning. Smokers baseline 15–20 ppm. |
+| eNO | Exhaled NO | < 25 ppb | 0–120 ppb | Rises 30–60 min into the phosgene latent phase before fatal pulmonary edema develops — the only window to intervene. Measured via direct oxidation, Pt/Nafion electrode. |
+| eCO₂ | Exhaled CO₂ | 4.0–4.5% | 0–7% | Reflects ventilatory distress; elevated in OP and phosgene, correlates with severity. |
+| OP Score | Organophosphate index | < 5 | 0–100 | Unitless composite score derived from an electrochemical aptamer-based (E-AB) biosensor on an Au electrode with methylene blue reporter. Near-zero for CO, phosgene, and baseline patients; scales with OP severity (mild ≈ 18, moderate ≈ 48, severe ≈ 82). Models a point-of-care cholinesterase-activity readout — critical because the pralidoxime reactivation window closes in ~2 min for soman, ~5h for sarin, ~40h for VX. |
 
 **Why HCN, Cl₂, and biologics are excluded:** HCN washes out in 10–22 seconds (patient is incapacitated before a breath sample is possible). Cl₂ is consumed in the airway and not exhaled. Biologics (anthrax, tularemia, plague, TB) operate on a days-to-weeks detection timescale — wrong device, wrong problem.
 

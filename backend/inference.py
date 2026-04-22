@@ -1,9 +1,11 @@
 """
-BreathaTech Inference v5
-=========================
-BreathaTechInference loads the trained XGBoost models and runs predictions.
-Field names coming from the API (e.g. spo2_pct, hr_bpm, symp_headache) are
-remapped to training column names (spo2, hr, headache) before inference.
+BreathaTech Inference v6 — sensor-first cascade architecture.
+
+Agent classifier:   sensor readings + vitals + symptoms → CO / OP / PHOSGENE / NONE
+Severity classifier: all agent features + agent probability outputs → severity 0–3
+
+time_since_exposure_min is NOT a model feature. It is used only in _treatment()
+as a clinician-entered annotation for OP urgency annotation.
 """
 
 import os
@@ -16,20 +18,33 @@ import pandas as pd
 BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
 MODEL_DIR = os.path.join(BASE_DIR, 'models')
 
-# ── must match train_models.py exactly ────────────────────────────────────────
-FEATURES = [
+# ── feature tiers — must match train_models.py exactly ────────────────────────
+SENSOR_FEATURES = [
     'eco_ppm', 'eno_ppb', 'eco2_pct', 'op_score',
+    'eco_ppm_z', 'eno_ppb_z', 'eco2_pct_z', 'op_score_z',
+    'max_sensor_z', 'eno_eco2_product', 'spo2_paradox',
+]
+
+VITAL_FEATURES = [
     'hr', 'sbp', 'dbp', 'rr', 'spo2', 'temp', 'age', 'is_smoker',
+    'map', 'pulse_pressure', 'shock_index', 'brady_flag', 'tachy_flag',
+    'hypoxia_flag',
+]
+
+SYMPTOM_FEATURES = [
     'headache', 'nausea', 'vomiting', 'dizziness', 'confusion',
     'loss_of_consciousness', 'chest_pain', 'dyspnea', 'diaphoresis',
     'miosis', 'salivation', 'lacrimation', 'bronchospasm', 'bronchorrhea',
     'fasciculations', 'muscle_weakness', 'seizure', 'cough', 'eye_irritation',
     'pulmonary_edema',
-    'spo2_paradox', 'op_z', 'cholinergic_score', 'eno_eco_ratio', 'eno_x_rr',
-    'map', 'pulse_pressure', 'shock_index', 'brady_flag', 'tachy_flag',
-    'hypoxia_flag', 'symptom_burden', 'sludge_score',
-    'eco_ppm_z', 'eno_ppb_z', 'eco2_pct_z', 'op_score_z',
+    'cholinergic_score', 'sludge_score', 'symptom_burden',
+    'eno_eco_ratio', 'eno_x_rr', 'op_chol_product',
 ]
+
+FEATURES = SENSOR_FEATURES + VITAL_FEATURES + SYMPTOM_FEATURES
+
+AGENT_CLASSES = ['CO', 'NONE', 'OP', 'PHOSGENE']
+SEV_FEATURES  = FEATURES + [f'agent_prob_{c}' for c in AGENT_CLASSES]
 
 SENSOR_BASELINES = {
     'eco_ppm':  {'mu': 1.26, 'sd': 5.0},
@@ -55,7 +70,6 @@ FIELD_MAP = {
     'dbp_mmhg':  'dbp',
 }
 
-# Triage level derived from severity
 TRIAGE_MAP = {0: 'Clear', 1: 'Monitor', 2: 'Escalate', 3: 'Immediate'}
 
 AGENT_NAMES = {
@@ -65,7 +79,6 @@ AGENT_NAMES = {
     'PHOSGENE': 'Phosgene — eNO signal',
 }
 
-# Treatment rules: agent × severity → treatment text
 TREATMENT_RULES = {
     'CO': {
         1: 'Remove from source. 100% O₂ via non-rebreather mask. Monitor SpO₂ and HbCO. Reassess every 30 min.',
@@ -130,16 +143,11 @@ class BreathaTechInference:
         d = {}
         for k, v in reading.items():
             mapped = FIELD_MAP.get(k, k)
-
-            # Strip symp_ prefix from symptom flags
             if mapped.startswith('symp_'):
                 mapped = mapped[5:]
-
             d[mapped] = v
 
-        # temp defaults to 37.0 if not provided (form collects it but API may omit)
         d.setdefault('temp', 37.0)
-
         return d
 
     # ── feature engineering (must match train_models.py exactly) ──────────────
@@ -149,12 +157,15 @@ class BreathaTechInference:
         d['eno_ppb_z']  = (d['eno_ppb']  - SENSOR_BASELINES['eno_ppb']['mu'])  / SENSOR_BASELINES['eno_ppb']['sd']
         d['eco2_pct_z'] = (d['eco2_pct'] - SENSOR_BASELINES['eco2_pct']['mu']) / SENSOR_BASELINES['eco2_pct']['sd']
         d['op_score_z'] = (d['op_score'] - SENSOR_BASELINES['op_score']['mu']) / SENSOR_BASELINES['op_score']['sd']
-        d['op_z']       = d['op_score_z']
+
+        # Sensor interaction features
+        d['max_sensor_z']     = max(d['eco_ppm_z'], d['eno_ppb_z'], d['eco2_pct_z'], d['op_score_z'])
+        d['eno_eco2_product'] = d['eno_ppb_z'] * d['eco2_pct_z']
 
         # CO SpO2 paradox: pulse-ox reads normal despite elevated eCO
         d['spo2_paradox'] = int(d['eco_ppm'] > 6 and d['spo2'] >= 95)
 
-        # Haemodynamic derived
+        # Haemodynamic derived vitals
         sbp = max(d['sbp'], 1)
         d['map']            = d['dbp'] + (d['sbp'] - d['dbp']) / 3.0
         d['pulse_pressure'] = d['sbp'] - d['dbp']
@@ -171,14 +182,14 @@ class BreathaTechInference:
         sludge_cols = ['salivation', 'lacrimation', 'nausea', 'vomiting', 'diaphoresis']
         d['sludge_score'] = sum(d.get(c, 0) for c in sludge_cols)
 
-        # Weighted symptom burden
         d['symptom_burden'] = sum(
             d.get(col, 0) * w for col, w in SYMPTOM_WEIGHTS.items()
         )
 
-        # Cross-sensor ratios
-        d['eno_eco_ratio'] = d['eno_ppb'] / (d['eco_ppm'] + 0.1)
-        d['eno_x_rr']      = d['eno_ppb'] * d['rr']
+        # Sensor ratio and interaction features
+        d['eno_eco_ratio']  = d['eno_ppb'] / (d['eco_ppm'] + 0.1)
+        d['eno_x_rr']       = d['eno_ppb'] * d['rr']
+        d['op_chol_product'] = d['op_score_z'] * d['cholinergic_score']
 
         return d
 
@@ -188,7 +199,6 @@ class BreathaTechInference:
         rules = TREATMENT_RULES.get(agent, {})
         text  = rules.get(severity, rules.get(max(rules.keys(), default=0), ''))
 
-        # Urgency annotation for OP based on time since exposure
         if agent == 'OP' and severity >= 2:
             if time_since_exposure_min <= 2:
                 text = '⚠ SOMAN AGING WINDOW — pralidoxime may already be ineffective. ' + text
@@ -208,7 +218,7 @@ class BreathaTechInference:
         # 2. Engineer features
         d = self._engineer(d)
 
-        # 3. Build feature vector in the exact training order
+        # 3. Build agent feature vector
         row = {f: d.get(f, 0) for f in FEATURES}
         X   = pd.DataFrame([row])[FEATURES]
 
@@ -218,25 +228,31 @@ class BreathaTechInference:
         agent       = self._agent_le.inverse_transform([agent_idx])[0]
         agent_conf  = float(agent_probs[agent_idx]) * 100
 
-        # Build per-class probability breakdown (as %)
         agent_breakdown = {
             cls: round(float(agent_probs[i]) * 100, 1)
             for i, cls in enumerate(self._agent_le.classes_)
         }
 
-        # 5. Severity prediction
-        sev_probs = self._severity_model.predict_proba(X)[0]
+        # 5. Cascade: inject agent probabilities as features for severity model
+        for i, cls in enumerate(AGENT_CLASSES):
+            d[f'agent_prob_{cls}'] = float(agent_probs[i])
+
+        sev_row = {f: d.get(f, 0) for f in SEV_FEATURES}
+        X_sev   = pd.DataFrame([sev_row])[SEV_FEATURES]
+
+        # 6. Severity prediction
+        sev_probs = self._severity_model.predict_proba(X_sev)[0]
         sev_idx   = int(np.argmax(sev_probs))
         severity  = int(self._severity_le.inverse_transform([sev_idx])[0])
 
-        # 6. Triage from severity
+        # 7. Triage from severity
         triage = TRIAGE_MAP.get(severity, 'Monitor')
 
-        # 7. Clinical flags
+        # 8. Clinical flags
         nerve_alert     = (agent == 'OP')
         phosgene_occult = (agent == 'PHOSGENE' and d.get('spo2', 100) > 93)
 
-        # 8. Treatment hint
+        # 9. Treatment hint (time_since_exposure_min used only here, not in model)
         tse = reading.get('time_since_exposure_min', 30) or 30
         treatment_hint = self._treatment(agent, severity, tse)
 
